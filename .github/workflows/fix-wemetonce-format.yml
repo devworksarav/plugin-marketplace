@@ -1,0 +1,63 @@
+name: Fix WeMetOnce catalog formatting
+
+on:
+  push:
+    branches:
+      - add-wemetonce
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore upstream catalog formatting and add WeMetOnce
+        run: |
+          git fetch origin main
+          git checkout origin/main -- .grok-plugin/marketplace.json
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.grok-plugin/marketplace.json')
+          text = path.read_text(encoding='utf-8')
+          if '"name": "wemetonce"' not in text:
+              entry = '''    {
+          "name": "wemetonce",
+          "description": "Find people from your past and reconnect through approved public WeMetOnce Lost Connection posts.",
+          "category": "communication",
+          "source": {
+            "source": "url",
+            "url": "https://github.com/devworksarav/wemetonce-grok-plugin.git",
+            "sha": "55bf34a86beed99180f39dd0b67ab565ba041225"
+          },
+          "homepage": "https://www.wemetonce.com/",
+          "keywords": ["wemetonce", "lost connection", "find someone from your past", "reconnect"],
+          "domains": ["wemetonce.com", "www.wemetonce.com"]
+        }'''
+              marker = '\n  ]\n}'
+              if marker not in text:
+                  raise SystemExit('Could not find catalog closing marker')
+              text = text.replace(marker, ',\n' + entry + marker, 1)
+              path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Regenerate plugin index
+        run: python3 scripts/generate-plugin-index.py
+
+      - name: Validate catalog
+        run: python3 scripts/validate-catalog.py
+
+      - name: Commit and remove helper workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/fix-wemetonce-format.yml
+          git add .grok-plugin/marketplace.json .grok-plugin/plugin-index.json
+          git commit -m "chore: normalize WeMetOnce marketplace diff"
+          git push origin HEAD:add-wemetonce
